@@ -8,7 +8,7 @@ The application allows users to customize music based on mood, style, tempo, dur
 
 Try the AI Music Generation Studio online:
 
-🔗 **Live Application:** [Click Here to Open AI Music Generation Studio](YOUR_LIVE_DEMO_URL)
+🔗 **Live Application:** [Click Here to Open AI Music Generation Studio](https://ai-music-generation-studio.streamlit.app/)
 
 Explore AI-powered music generation, customize instruments and music settings, and listen to your generated tracks.
 
