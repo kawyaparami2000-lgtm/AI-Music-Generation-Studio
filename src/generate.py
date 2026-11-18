@@ -1,5 +1,7 @@
 import argparse
 import subprocess
+import shutil
+import os
 import numpy as np
 import pretty_midi
 import tensorflow as tf
@@ -9,7 +11,7 @@ from pathlib import Path
 
 
 # ==========================================
-# PROJECT PATHS
+# PROJECT PATHS - WINDOWS + LINUX SUPPORT
 # ==========================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -19,18 +21,52 @@ DATA_FILE = BASE_DIR / "data" / "notes.npy"
 
 OUTPUT_DIR = BASE_DIR / "outputs"
 
-SOUNDFONT_FILE = BASE_DIR / "soundfonts" / "FluidR3_GM.sf2"
+# SoundFont locations
+SOUNDFONT_CANDIDATES = [
+    BASE_DIR / "soundfonts" / "FluidR3_GM.sf2",
+    Path("/usr/share/sounds/sf2/FluidR3_GM.sf2"),
+    Path("/usr/share/soundfonts/FluidR3_GM.sf2"),
+]
 
-FLUIDSYNTH_EXE = (
-    Path.home()
-    / "Downloads"
-    / "FluidSynth"
-    / "fluidsynth-v2.6.2-win10-x64-cpp11"
-    / "bin"
-    / "fluidsynth.exe"
+# Optional custom SoundFont path
+custom_soundfont = os.environ.get("SOUNDFONT_PATH")
+
+if custom_soundfont:
+    SOUNDFONT_CANDIDATES.insert(
+        0,
+        Path(custom_soundfont)
+    )
+
+SOUNDFONT_FILE = next(
+    (
+        path for path in SOUNDFONT_CANDIDATES
+        if path.exists()
+    ),
+    SOUNDFONT_CANDIDATES[0]
 )
 
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# Find FluidSynth executable
+FLUIDSYNTH_EXE = shutil.which("fluidsynth")
+
+# Windows fallback
+if FLUIDSYNTH_EXE is None:
+
+    WINDOWS_FLUIDSYNTH = (
+        Path.home()
+        / "Downloads"
+        / "FluidSynth"
+        / "fluidsynth-v2.6.2-win10-x64-cpp11"
+        / "bin"
+        / "fluidsynth.exe"
+    )
+
+    if WINDOWS_FLUIDSYNTH.exists():
+        FLUIDSYNTH_EXE = str(WINDOWS_FLUIDSYNTH)
+
+OUTPUT_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
 
 
 # ==========================================
@@ -104,10 +140,10 @@ TEMPO_SETTINGS = {
 # C - G - Am - F progression
 
 CHORD_PROGRESSION = [
-    [60, 64, 67],  # C major
-    [55, 59, 62],  # G major
-    [57, 60, 64],  # A minor
-    [53, 57, 60]   # F major
+    [60, 64, 67],
+    [55, 59, 62],
+    [57, 60, 64],
+    [53, 57, 60]
 ]
 
 CHORD_ROOTS = [48, 43, 45, 41]
@@ -160,6 +196,7 @@ def generate_melody(
     )
 
     if len(notes) <= SEQUENCE_LENGTH:
+
         raise ValueError(
             "Not enough MIDI notes in the dataset."
         )
@@ -201,6 +238,7 @@ def generate_melody(
         )
 
         if (step + 1) % 100 == 0:
+
             print(
                 f"Generated {step + 1}/{total_notes} notes"
             )
@@ -221,8 +259,6 @@ def create_drum_track(duration, bpm):
     )
 
     beat_duration = 60 / bpm
-
-    # Kick, snare and hi-hat pattern
 
     drum_pattern = [
         (36, 0.0, 100),
@@ -297,8 +333,6 @@ def create_chord_track(
 
         if instrument_name == "Piano":
 
-            # Piano arpeggio pattern
-
             pattern = [
                 chord[0],
                 chord[1],
@@ -333,8 +367,6 @@ def create_chord_track(
 
         elif instrument_name == "Guitar":
 
-            # Guitar strumming
-
             for beat_number in [0, 2]:
 
                 strum_time = (
@@ -365,8 +397,6 @@ def create_chord_track(
                     )
 
         else:
-
-            # Sustained chord pads for Flute and Synthesizer
 
             for pitch in chord:
 
@@ -469,8 +499,6 @@ def create_violin_track(
 
     for index, melody_pitch in enumerate(generated_notes):
 
-        # Violin plays complementary notes
-
         if index % 2 != 0:
             continue
 
@@ -484,8 +512,6 @@ def create_violin_track(
         ) % len(CHORD_PROGRESSION)
 
         chord = CHORD_PROGRESSION[chord_index]
-
-        # Build available chord tones in violin range
 
         candidates = []
 
@@ -524,8 +550,6 @@ def create_violin_track(
 
         else:
 
-            # Prefer nearby notes for smoother movement
-
             selected_pitch = min(
                 candidates,
                 key=lambda pitch: (
@@ -533,8 +557,6 @@ def create_violin_track(
                     + 0.8 * abs(pitch - previous_pitch)
                 )
             )
-
-        # Slight rhythmic variation
 
         timing_offset = np.random.uniform(
             0.0,
@@ -589,8 +611,6 @@ def create_cello_track(duration, bpm):
         ]
 
         fifth = root + 7
-
-        # Two sustained notes per bar
 
         cello_pattern = [
             (0, root),
@@ -651,8 +671,6 @@ def create_melody_track(
 
         if original_start >= duration:
             break
-
-        # Small timing variation
 
         timing_offset = rng.uniform(
             0.0,
@@ -737,9 +755,7 @@ def create_full_track(
         else None
     )
 
-    # --------------------------------------
     # MAIN AI MELODY
-    # --------------------------------------
 
     if main_instrument:
 
@@ -763,9 +779,7 @@ def create_full_track(
             melody_track
         )
 
-    # --------------------------------------
     # SUPPORTING INSTRUMENTS
-    # --------------------------------------
 
     for instrument_name in selected_instruments:
 
@@ -819,12 +833,7 @@ def create_full_track(
             instrument
         )
 
-    # --------------------------------------
     # PIANO ACCOMPANIMENT
-    # --------------------------------------
-
-    # If Piano is the main melody, add a quieter
-    # separate piano accompaniment when possible.
 
     if (
         main_instrument == "Piano"
@@ -861,6 +870,19 @@ def create_full_track(
 
 def convert_to_wav(midi_file, wav_file):
 
+    if not FLUIDSYNTH_EXE:
+
+        raise FileNotFoundError(
+            "FluidSynth executable not found. "
+            "Please install FluidSynth."
+        )
+
+    if not SOUNDFONT_FILE.exists():
+
+        raise FileNotFoundError(
+            f"SoundFont not found: {SOUNDFONT_FILE}"
+        )
+
     command = [
         str(FLUIDSYNTH_EXE),
         "-ni",
@@ -883,6 +905,12 @@ def convert_to_wav(midi_file, wav_file):
             result.stderr or result.stdout
         )
 
+    if not Path(wav_file).exists():
+
+        raise RuntimeError(
+            "WAV conversion failed. Output file was not created."
+        )
+
 
 # ==========================================
 # MAIN MUSIC GENERATION
@@ -899,18 +927,6 @@ def generate_music(
     volumes
 ):
 
-    if not FLUIDSYNTH_EXE.exists():
-
-        raise FileNotFoundError(
-            f"FluidSynth not found: {FLUIDSYNTH_EXE}"
-        )
-
-    if not SOUNDFONT_FILE.exists():
-
-        raise FileNotFoundError(
-            f"SoundFont not found: {SOUNDFONT_FILE}"
-        )
-
     if not selected_instruments:
 
         raise ValueError(
@@ -921,6 +937,21 @@ def generate_music(
 
         raise ValueError(
             "Single Instrument mode requires exactly one instrument."
+        )
+
+    # Validate audio dependencies
+
+    if not FLUIDSYNTH_EXE:
+
+        raise FileNotFoundError(
+            "FluidSynth not found. "
+            "Please install FluidSynth."
+        )
+
+    if not SOUNDFONT_FILE.exists():
+
+        raise FileNotFoundError(
+            f"SoundFont not found: {SOUNDFONT_FILE}"
         )
 
     bpm = TEMPO_SETTINGS[tempo]
@@ -942,6 +973,18 @@ def generate_music(
     notes = None
 
     if needs_ai:
+
+        if not MODEL_FILE.exists():
+
+            raise FileNotFoundError(
+                f"AI model not found: {MODEL_FILE}"
+            )
+
+        if not DATA_FILE.exists():
+
+            raise FileNotFoundError(
+                f"Processed dataset not found: {DATA_FILE}"
+            )
 
         print("Loading trained AI model...")
 
@@ -1160,6 +1203,7 @@ if __name__ == "__main__":
         )
 
         if not isinstance(volumes, dict):
+
             raise ValueError(
                 "Volumes must be a JSON object."
             )
